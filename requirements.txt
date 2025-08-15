@@ -1,0 +1,11 @@
+# VTK Python Documentation Enhancement Requirements
+# 
+# Core dependencies:
+# - vtk: Main VTK library for Python
+# - typer: CLI framework used by extraction and enhancement scripts
+#
+# Other dependencies are Python standard library modules:
+# - json, re, ast, pathlib, concurrent.futures, subprocess, typing
+
+vtk>=9.0.0
+typer>=0.12.0

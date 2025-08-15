@@ -1,0 +1,15 @@
+# Python cache files
+__pycache__/
+*.pyc
+
+# Virtual environments
+.venv/
+
+# Generated documentation and stubs
+docs/vtk-docs/
+docs/python-stubs-official/
+docs/python-stubs-enhanced/
+docs/python-api/
+
+# OS files
+.DS_Store
