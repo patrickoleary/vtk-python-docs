@@ -1,15 +1,25 @@
 # Python cache files
 __pycache__/
 *.pyc
+*.egg-info/
 
 # Virtual environments
 .venv/
 
-# Generated documentation and stubs
-docs/vtk-docs/
-docs/python-stubs-official/
-docs/python-stubs-enhanced/
-docs/python-api/
+# Environment variables
+.env
+
+# Generated documentation
+docs/
+
+# Build artifacts
+dist/
+build/
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
 
 # OS files
 .DS_Store

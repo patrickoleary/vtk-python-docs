@@ -1,239 +1,178 @@
 # VTK Python Documentation Enhancement
 
-A comprehensive toolkit for enhancing VTK Python stub files with rich documentation and generating beautiful markdown API documentation.
+A Python package for extracting VTK documentation, generating enhanced Python stubs, and creating markdown API documentation.
 
 ## 🚀 Features
 
-- **VTK Documentation Extraction**: Extract comprehensive documentation from installed VTK library using Python introspection
-- **Enhanced Python Stubs**: Enhance VTK's official Python stub files with rich docstrings for superior IDE IntelliSense
-- **Rich Markdown Documentation**: Generate beautiful, web-ready markdown documentation organized by modules and classes
-- **Parallel Processing**: High-performance parallel processing with 12 worker threads
-- **Modular Architecture**: Memory-efficient per-module processing for optimal performance
-- **Comprehensive Verification**: Built-in tools to verify pipeline integrity and completeness
+- **VTK Documentation Extraction**: Extract documentation from VTK using Python introspection
+- **Enhanced Python Stubs**: Generate VTK stub files with rich docstrings for IDE IntelliSense
+- **Markdown Documentation**: Generate markdown API documentation organized by modules
+- **JSONL Database**: Consolidated database of all VTK classes for querying
+- **LLM Classification**: AI-powered class metadata using LiteLLM (synopsis, action phrase, role, visibility)
 
 ## 📋 Requirements
 
-- Python 3.7+
-- VTK Python package installed
-- Standard Python libraries: `json`, `re`, `ast`, `pathlib`, `concurrent.futures`, `subprocess`, `typing`
+- Python 3.10+
+- VTK Python package
 
-## 🛠️ Installation & Setup
+## 🛠️ Installation
 
-### Option 1: Automated Setup (Recommended)
-
-1. Clone this repository:
 ```bash
 git clone <repository-url>
 cd vtk-python-docs
+./setup.sh
 ```
 
-2. Run the automated setup script:
+This creates a virtual environment and installs the package in editable mode.
+
+## ⚙️ LLM Configuration (Optional)
+
+For AI-powered classification (synopsis, role, visibility), copy `.env.example` to `.env` and configure your LLM provider:
+
 ```bash
-./setup_venv.sh
+cp .env.example .env
+# Edit .env with your API key
 ```
 
-This will create a virtual environment, install VTK, and set up the project.
+Supported providers via [LiteLLM](https://docs.litellm.ai/docs/providers):
+- **OpenAI**: `gpt-4o-mini`, `gpt-4o`
+- **Anthropic**: `claude-3-haiku-20240307`, `claude-3-5-sonnet-20241022`
+- **Ollama** (local, free): `ollama/llama3.2`, `ollama/mistral`
+- **Google**: `gemini/gemini-1.5-flash`
+- And 100+ more providers
 
-### Option 2: Manual Setup
-
-1. Clone this repository:
-```bash
-git clone <repository-url>
-cd vtk-python-docs
-```
-
-2. Create and activate a virtual environment:
-```bash
-python3 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-```
-
-3. Install requirements:
-```bash
-pip install -r requirements.txt
-python setup.py
-```
+If no LLM is configured, classification metadata will be skipped.
 
 ## 📖 Usage
 
-### Quick Start - Complete Build from Scratch
+### Full Build
 
 ```bash
-# Clean and build everything (recommended for testing)
-python build.py
-
-# Or step by step:
-python clean.py                    # Clean previous builds
-python scripts/extract_all_vtk_docs.py     # Extract VTK documentation
-python scripts/generate_official_stubs.py  # Generate official VTK stubs
-python scripts/enhance_all_vtk_stubs.py    # Enhance stubs with documentation
-python scripts/generate_markdown_docs.py   # Generate markdown docs
-python tools/verify_vtk_docs.py --all  # Verify integrity
+source .venv/bin/activate
+vtk-docs build
 ```
 
-### Individual Pipeline Steps
+This generates all outputs (~35 seconds without LLM, longer with LLM due to rate limiting):
+- `docs/vtk-python-docs.jsonl` - JSONL database
+- `docs/python-stubs-enhanced/` - Enhanced Python stubs
+- `docs/python-api/` - Markdown documentation
+
+### CLI Commands
 
 ```bash
-# 1. Extract VTK documentation (creates docs/vtk-docs/)
-python scripts/extract_all_vtk_docs.py
-
-# 2. Generate official VTK stubs (creates docs/python-stubs-official/)
-python scripts/generate_official_stubs.py
-
-# 3. Enhance Python stubs with documentation (creates docs/python-stubs-enhanced/)
-python scripts/enhance_all_vtk_stubs.py
-
-# 4. Generate markdown documentation (creates docs/python-api/)
-python scripts/generate_markdown_docs.py
-
-# 5. Verify everything works correctly
-python tools/verify_vtk_docs.py --all
+vtk-docs --help          # Show all commands
+vtk-docs build           # Run complete build pipeline
+vtk-docs extract         # Extract VTK documentation to JSONL
+vtk-docs stubs           # Generate and enhance Python stubs
+vtk-docs markdown        # Generate markdown documentation
+vtk-docs clean           # Clean generated files
+vtk-docs stats           # Show database statistics
+vtk-docs search <query>  # Search the documentation
 ```
 
-### Individual Components
+### Search Examples
 
-#### VTK Documentation Extraction
 ```bash
-# Extract all modules in parallel (recommended)
-python scripts/extract_all_vtk_docs.py
-
-# Extract single module for testing
-python scripts/extract_vtk_docs.py --module vtkCommonCore --output docs/vtk-docs/
+vtk-docs search vtkActor           # Search by class name
+vtk-docs search Render -f synopsis # Search in synopsis field
+vtk-docs search Core -f module_name -n 20  # Search modules, show 20 results
 ```
 
-#### Official VTK Stub Generation
-```bash
-# Generate official VTK stubs using VTK's built-in generator
-python scripts/generate_official_stubs.py
+### Programmatic Usage
 
-# Or specify custom output directory
-python scripts/generate_official_stubs.py --output docs/python-stubs-official
+```python
+from vtk_python_docs.build import build_all
+
+# Run full build
+build_all()
+
+# Or use individual components
+from vtk_python_docs.extract import extract_all
+from vtk_python_docs.stubs import generate_all as generate_stubs
+from vtk_python_docs.markdown import generate_all as generate_markdown
+from vtk_python_docs.config import get_config
+
+config = get_config()
+extract_all(config)
+generate_stubs(config)
+generate_markdown(config)
 ```
 
-#### Python Stub Enhancement
-```bash
-# Enhance all stubs in parallel (recommended)
-python scripts/enhance_all_vtk_stubs.py
+### Querying the JSONL Database
 
-# Enhance single module for testing
-python scripts/enhance_vtk_stubs.py --module vtkCommonCore --docs-dir docs/vtk-docs/ --output docs/python-stubs-enhanced/
+```python
+import json
+from pathlib import Path
+
+# Stream through JSONL database
+for line in open('docs/vtk-python-docs.jsonl'):
+    record = json.loads(line)
+    if 'Actor' in record['class_name']:
+        print(f"{record['class_name']}: {record.get('synopsis', '')}")
 ```
-
-#### Markdown Documentation Generation
-```bash
-# Generate complete markdown documentation
-python scripts/generate_markdown_docs.py
-```
-
-### IDE Integration
-
-Configure your IDE to use the enhanced stubs by pointing to `docs/python-stubs-enhanced/`. The included `pyrightconfig.json` is pre-configured for this.
 
 ## 📁 Output Structure
 
 ```
 docs/
-├── vtk-docs/                    # Extracted VTK documentation (JSON)
-│   ├── vtkCommonCore.json
-│   ├── vtkCommonDataModel.json
-│   └── ... (150+ modules)
-├── python-stubs-official/       # Official VTK stubs (generated by VTK)
+├── vtk-python-docs.jsonl    # All VTK classes (JSONL format)
+├── python-stubs-enhanced/   # Enhanced .pyi stub files
 │   ├── vtkCommonCore.pyi
-│   ├── vtkCommonDataModel.pyi
 │   └── ... (150+ modules)
-├── python-stubs-enhanced/       # Enhanced Python stubs with documentation
-│   └── vtkmodules/
-│       ├── vtkCommonCore.pyi
-│       ├── vtkCommonDataModel.pyi
-│       └── ... (150+ modules)
-└── python-api/                  # Rich markdown documentation
-    ├── index.md                 # Main documentation index
-    ├── classes.md               # All classes sorted by 4th character
-    ├── modules.md               # All classes organized by module
-    ├── vtkCommonCore/           # Module-specific documentation
-    │   ├── index.md
-    │   ├── vtkObject.md
-    │   └── ... (class files)
-    └── ... (150+ module directories)
+└── python-api/              # Markdown documentation
+    ├── index.md
+    └── vtkCommonCore/
+        ├── index.md
+        └── vtkObject.md
 ```
 
-## 🔧 Architecture
+## 🔧 Project Structure
 
-### Modular Design
-- **Per-module processing**: Each VTK module is processed independently for optimal memory usage
-- **Parallel execution**: 12 worker threads for maximum performance
-- **Clean separation**: Documentation extraction, stub enhancement, and markdown generation are separate stages
+```
+vtk-python-docs/
+├── pyproject.toml
+├── setup.sh
+├── tests/               # pytest test suite
+└── vtk_python_docs/
+    ├── __init__.py
+    ├── cli.py           # Typer CLI
+    ├── config.py        # Centralized configuration
+    ├── build.py         # Build pipeline orchestrator
+    ├── extract/         # VTK documentation extraction
+    ├── stubs/           # Stub generation & enhancement
+    └── markdown/        # Markdown generation
+```
 
-### Key Components
-
-#### Core Scripts
-- `scripts/extract_all_vtk_docs.py` - Parallel VTK documentation extraction
-- `scripts/enhance_all_vtk_stubs.py` - Parallel Python stub enhancement  
-- `scripts/generate_markdown_docs.py` - Rich markdown documentation generation
-
-#### Single-Module Scripts
-- `scripts/extract_vtk_docs.py` - Extract documentation for one module
-- `scripts/enhance_vtk_stubs.py` - Enhance stubs for one module
-
-#### Verification Tools
-- `tools/verify_vtk_docs.py` - Comprehensive pipeline verification
-
-## 📊 Performance
-
-- **Documentation Extraction**: ~6 seconds for 2,942 classes across 151 modules
-- **Stub Enhancement**: ~15 seconds for 151 stub files
-- **Markdown Generation**: ~1.5 seconds for complete web documentation
-- **Total Pipeline**: Under 30 seconds for complete enhancement
-
-## 🎯 Key Features
-
-### Documentation Enhancement
-- Extracts comprehensive class and method documentation from VTK library
-- Converts C++ Doxygen tags to Python format (`@param` → `:param:`, etc.)
-- Handles `@overload` signatures correctly (docstring only on final signature)
-- Adds placeholder docstrings only when no meaningful documentation exists
-
-### Markdown Documentation
-- Beautiful, web-ready markdown with rich formatting
-- Organized by VTK database sections for logical grouping
-- Multiple navigation options (by module, by 4th character)
-- Cross-references and search-friendly structure
-- Automatic VTK version detection and tagging
-
-### IDE Integration
-- Enhanced IntelliSense with comprehensive VTK documentation
-- Proper typing support from VTK's official stub generation
-- Clean, Pythonic documentation format
-- Compatible with PyRight, Pylance, and other language servers
-
-## 🧪 Verification
-
-Verify the integrity of your documentation pipeline:
+## 🧪 Development
 
 ```bash
-# Verify all components
-python tools/verify_vtk_docs.py --all
+# Install with dev dependencies
+pip install -e ".[dev]"
 
-# Verify specific components
-python tools/verify_vtk_docs.py --docs      # JSON documentation
-python tools/verify_vtk_docs.py --stubs     # Enhanced stubs
-python tools/verify_vtk_docs.py --markdown  # Markdown docs
+# Run tests
+pytest tests/
+
+# Run tests with coverage
+pytest tests/ --cov=vtk_python_docs
+
+# Lint code
+ruff check vtk_python_docs/
+
+# Type check
+pyright vtk_python_docs/
 ```
 
-## 📈 Statistics
+## 🔑 Environment Variables
 
-Based on VTK 9.5.0:
-- **151 VTK modules** processed
-- **2,942 VTK classes** documented
-- **99.3% success rate** (150/151 modules enhanced)
-- **Comprehensive coverage** of VTK Python API
-
-## 🤝 Contributing
-
-This project provides a complete, production-ready VTK documentation enhancement pipeline. Contributions for improvements, bug fixes, or support for newer VTK versions are welcome.
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `LLM_MODEL` | LiteLLM model identifier | (none) |
+| `OPENAI_API_KEY` | OpenAI API key | (none) |
+| `ANTHROPIC_API_KEY` | Anthropic API key | (none) |
+| `GEMINI_API_KEY` | Google Gemini API key | (none) |
+| `LLM_RATE_LIMIT` | Requests per minute | 60 |
+| `LLM_MAX_CONCURRENT` | Max concurrent requests | 10 |
 
 ## 📄 License
 
-This project enhances the official VTK Python bindings and documentation. Please refer to VTK's licensing terms for the underlying VTK library.
-
----
+This project enhances the official VTK Python bindings. Please refer to VTK's licensing terms for the underlying VTK library.
