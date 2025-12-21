@@ -24,6 +24,7 @@ import vtkmodules
 
 # Local
 from ..config import Config, get_config
+from .introspection import introspect_class
 from .llm import check_llm_configured, classify_classes_batch
 
 
@@ -50,7 +51,7 @@ def extract_all(config: Config | None = None) -> list[dict[str, Any]]:
     # Extract documentation
     all_records = extract_all_class_docs(module_classes)
 
-    # Classify with LLM (synopsis, action_phrase, role, visibility)
+    # Classify with LLM (synopsis, action_phrase, visibility_score)
     classify_all(all_records)
 
     # Write to JSONL
@@ -123,7 +124,14 @@ def extract_all_class_docs(module_classes: dict[str, list[tuple[str, str]]]) -> 
         for module_name, class_name in classes:
             class_docs = extract_class_docs(module_name, class_name)
             if class_docs:
-                all_records.append({"class_name": class_name, "module_name": vtk_module, **class_docs})
+                # Add VTK introspection data (role, datatypes, semantic_methods)
+                introspection = introspect_class(class_name)
+                all_records.append({
+                    "class_name": class_name,
+                    "module_name": vtk_module,
+                    **class_docs,
+                    **introspection,
+                })
 
             total_processed += 1
             if total_processed % 100 == 0:
@@ -346,7 +354,7 @@ def clean_docstring(docstring: str) -> str:
     return cleaned
 
 def classify_all(all_records: list[dict[str, Any]]) -> None:
-    """Classify all records using LLM (synopsis, action_phrase, role, visibility).
+    """Classify all records using LLM (synopsis, action_phrase, visibility_score).
 
     Args:
         all_records: List of class documentation records (modified in place).
@@ -365,15 +373,15 @@ def classify_all(all_records: list[dict[str, Any]]) -> None:
         if result:
             record["synopsis"] = result.get("synopsis", "")
             record["action_phrase"] = result.get("action_phrase", "")
-            record["role"] = result.get("role", "utility_helper")
-            record["visibility"] = result.get("visibility", "unlikely")
+            # role is set by introspection, not LLM
+            record["visibility_score"] = result.get("visibility_score", 0.3)
             classified_count += 1
         else:
             # Set defaults for failed classifications
             record["synopsis"] = ""
             record["action_phrase"] = ""
-            record["role"] = "utility_helper"
-            record["visibility"] = "unlikely"
+            # role is set by introspection, not LLM
+            record["visibility_score"] = 0.3
 
     print(f"   ✅ Classified {classified_count}/{len(all_records)} classes")
 

@@ -17,8 +17,6 @@ class TestLLMConfig:
         """Test that classify prompt has required placeholders."""
         assert "{class_name}" in CLASSIFY_PROMPT
         assert "{class_doc}" in CLASSIFY_PROMPT
-        assert "{role_list}" in CLASSIFY_PROMPT
-        assert "{visibility_list}" in CLASSIFY_PROMPT
 
     def test_rate_limit_is_positive(self):
         """Test that rate limit is a positive integer."""

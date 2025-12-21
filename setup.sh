@@ -3,23 +3,18 @@
 
 set -e
 
-echo "🚀 Setting up virtual environment..."
+echo "🚀 Setting up virtual environment with uv..."
 
-python3 -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-
-echo "📦 Installing vtk-python-docs package..."
-pip install -e .
+uv sync --extra dev
 
 echo ""
 echo "✅ Setup complete!"
 echo ""
 echo "To activate: source .venv/bin/activate"
-echo "To build:    vtk-docs build"
+echo "To build:    uv run vtk-docs build"
 echo ""
 echo "Available commands:"
-echo "   vtk-docs --help     Show all commands"
-echo "   vtk-docs build      Run full build pipeline"
-echo "   vtk-docs extract    Extract VTK documentation"
-echo "   vtk-docs search     Search the documentation"
+echo "   uv run vtk-docs --help     Show all commands"
+echo "   uv run vtk-docs build      Run full build pipeline"
+echo "   uv run vtk-docs extract    Extract VTK documentation"
+echo "   uv run vtk-docs search     Search the documentation"

@@ -37,8 +37,7 @@ class TestClassifyClass:
         if result:
             assert "synopsis" in result
             assert "action_phrase" in result
-            assert "role" in result
-            assert "visibility" in result
+            assert "visibility_score" in result
 
 
 class TestClassifyClassesBatch:

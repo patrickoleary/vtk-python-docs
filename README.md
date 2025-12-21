@@ -5,15 +5,17 @@ A Python package for extracting VTK documentation, generating enhanced Python st
 ## 🚀 Features
 
 - **VTK Documentation Extraction**: Extract documentation from VTK using Python introspection
+- **VTK Type Introspection**: Automatic role classification (input, filter, output, etc.) and datatype detection using VTK's type system
 - **Enhanced Python Stubs**: Generate VTK stub files with rich docstrings for IDE IntelliSense
 - **Markdown Documentation**: Generate markdown API documentation organized by modules
 - **JSONL Database**: Consolidated database of all VTK classes for querying
-- **LLM Classification**: AI-powered class metadata using LiteLLM (synopsis, action phrase, role, visibility)
+- **LLM Classification**: AI-powered class metadata using LiteLLM (synopsis, action_phrase, visibility_score)
 
 ## 📋 Requirements
 
 - Python 3.10+
 - VTK Python package
+- [uv](https://docs.astral.sh/uv/) package manager
 
 ## 🛠️ Installation
 
@@ -23,11 +25,17 @@ cd vtk-python-docs
 ./setup.sh
 ```
 
-This creates a virtual environment and installs the package in editable mode.
+Or manually with uv:
+
+```bash
+uv sync --extra dev
+```
+
+This creates a virtual environment and installs the package with all dependencies.
 
 ## ⚙️ LLM Configuration (Optional)
 
-For AI-powered classification (synopsis, role, visibility), copy `.env.example` to `.env` and configure your LLM provider:
+For AI-powered classification (synopsis, action_phrase, visibility_score), copy `.env.example` to `.env` and configure your LLM provider:
 
 ```bash
 cp .env.example .env
@@ -48,8 +56,7 @@ If no LLM is configured, classification metadata will be skipped.
 ### Full Build
 
 ```bash
-source .venv/bin/activate
-vtk-docs build
+uv run vtk-docs build
 ```
 
 This generates all outputs (~35 seconds without LLM, longer with LLM due to rate limiting):
@@ -60,22 +67,22 @@ This generates all outputs (~35 seconds without LLM, longer with LLM due to rate
 ### CLI Commands
 
 ```bash
-vtk-docs --help          # Show all commands
-vtk-docs build           # Run complete build pipeline
-vtk-docs extract         # Extract VTK documentation to JSONL
-vtk-docs stubs           # Generate and enhance Python stubs
-vtk-docs markdown        # Generate markdown documentation
-vtk-docs clean           # Clean generated files
-vtk-docs stats           # Show database statistics
-vtk-docs search <query>  # Search the documentation
+uv run vtk-docs --help          # Show all commands
+uv run vtk-docs build           # Run complete build pipeline
+uv run vtk-docs extract         # Extract VTK documentation to JSONL
+uv run vtk-docs stubs           # Generate and enhance Python stubs
+uv run vtk-docs markdown        # Generate markdown documentation
+uv run vtk-docs clean           # Clean generated files
+uv run vtk-docs stats           # Show database statistics
+uv run vtk-docs search <query>  # Search the documentation
 ```
 
 ### Search Examples
 
 ```bash
-vtk-docs search vtkActor           # Search by class name
-vtk-docs search Render -f synopsis # Search in synopsis field
-vtk-docs search Core -f module_name -n 20  # Search modules, show 20 results
+uv run vtk-docs search vtkActor           # Search by class name
+uv run vtk-docs search Render -f synopsis # Search in synopsis field
+uv run vtk-docs search Core -f module_name -n 20  # Search modules, show 20 results
 ```
 
 ### Programmatic Usage
@@ -116,6 +123,7 @@ for line in open('docs/vtk-python-docs.jsonl'):
 ```
 docs/
 ├── vtk-python-docs.jsonl    # All VTK classes (JSONL format)
+├── llm-cache.jsonl          # Cached LLM classifications (avoids re-calling LLM)
 ├── python-stubs-enhanced/   # Enhanced .pyi stub files
 │   ├── vtkCommonCore.pyi
 │   └── ... (150+ modules)
@@ -125,6 +133,23 @@ docs/
         ├── index.md
         └── vtkObject.md
 ```
+
+### JSONL Record Fields
+
+Each record in `vtk-python-docs.jsonl` contains:
+
+| Field | Source | Description |
+|-------|--------|-------------|
+| `class_name` | VTK | Class name (e.g., `vtkActor`) |
+| `module_name` | VTK | Module name (e.g., `vtkRenderingCore`) |
+| `class_doc` | VTK | Raw documentation from `help()` |
+| `role` | **Introspection** | Pipeline role: `input`, `filter`, `output`, `properties`, `renderer`, etc. |
+| `input_datatype` | **Introspection** | Input data type (e.g., `vtkPolyData`) |
+| `output_datatype` | **Introspection** | Output data type |
+| `semantic_methods` | **Introspection** | Non-boilerplate methods |
+| `synopsis` | **LLM** | One-sentence summary |
+| `action_phrase` | **LLM** | Noun-phrase (e.g., "mesh smoothing") |
+| `visibility_score` | **LLM** | 0.0-1.0 likelihood users mention this class |
 
 ## 🔧 Project Structure
 
@@ -147,19 +172,19 @@ vtk-python-docs/
 
 ```bash
 # Install with dev dependencies
-pip install -e ".[dev]"
+uv sync --extra dev
 
 # Run tests
-pytest tests/
+uv run pytest
 
 # Run tests with coverage
-pytest tests/ --cov=vtk_python_docs
+uv run pytest --cov=vtk_python_docs
 
 # Lint code
-ruff check vtk_python_docs/
+uv run ruff check .
 
 # Type check
-pyright vtk_python_docs/
+uv run pyright vtk_python_docs/
 ```
 
 ## 🔑 Environment Variables
