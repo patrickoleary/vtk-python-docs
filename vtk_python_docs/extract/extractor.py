@@ -3,7 +3,16 @@
 This module extracts documentation from VTK's Python bindings at runtime.
 VTK embeds Doxygen documentation from C++ headers into Python __doc__ strings.
 
-Pipeline: get_vtk_classes -> extract_all_class_docs -> generate_synopses -> write_jsonl
+Code map:
+    extract_all()                      Main entry point, orchestrates full pipeline
+        _get_vtk_classes()             Discover VTK classes from vtkmodules
+        _extract_all_class_docs()      Extract docs for all classes
+            _extract_class_docs()      Extract docs for a single class
+                _parse_help_structure()    Parse help() output into sections
+                    _extract_methods_from_section()  Extract method docs from a section
+                    _clean_docstring()               Clean/normalize docstrings
+        _classify_all()                LLM classification (synopsis, action_phrase, visibility_score)
+        _write_jsonl()                 Write records to JSONL file
 """
 
 # Standard library
@@ -12,14 +21,13 @@ import importlib
 import inspect
 import io
 import json
-
-# Discover VTK modules
 import pkgutil
 import re
 import sys
 from pathlib import Path
 from typing import Any
 
+# Third-party
 import vtkmodules
 
 # Local
@@ -43,19 +51,19 @@ def extract_all(config: Config | None = None) -> list[dict[str, Any]]:
     print("=" * 50)
 
     # Discovery
-    module_classes = get_vtk_classes()
+    module_classes = _get_vtk_classes()
 
     # Ensure output directory exists
     config.docs_dir.mkdir(parents=True, exist_ok=True)
 
     # Extract documentation
-    all_records = extract_all_class_docs(module_classes)
+    all_records = _extract_all_class_docs(module_classes)
 
     # Classify with LLM (synopsis, action_phrase, visibility_score)
-    classify_all(all_records)
+    _classify_all(all_records)
 
     # Write to JSONL
-    write_jsonl(all_records, config.jsonl_output)
+    _write_jsonl(all_records, config.jsonl_output)
 
     print("=" * 50)
     print("✅ Extraction completed!")
@@ -65,7 +73,7 @@ def extract_all(config: Config | None = None) -> list[dict[str, Any]]:
 
     return all_records
 
-def get_vtk_classes() -> dict[str, list[tuple[str, str]]]:
+def _get_vtk_classes() -> dict[str, list[tuple[str, str]]]:
     """Get VTK classes grouped by module.
 
     Returns:
@@ -90,9 +98,10 @@ def get_vtk_classes() -> dict[str, list[tuple[str, str]]]:
             # Find all VTK classes in the module
             # - Must start with "vtk" (e.g., vtkActor)
             # - Must not start with "vtk_" (internal helpers)
+            # - Must not start with "vtkm" (VTK-m classes, not wrapped in Python)
             # - Must be a class (not a function or constant)
             for name in dir(module):
-                if name.startswith("vtk") and not name.startswith("vtk_"):
+                if name.startswith("vtk") and not name.startswith("vtk_") and not name.startswith("vtkm"):
                     attr = getattr(module, name)
                     if inspect.isclass(attr):
                         if module_name not in module_classes:
@@ -102,10 +111,10 @@ def get_vtk_classes() -> dict[str, list[tuple[str, str]]]:
         except (ImportError, Exception):
             continue
 
-    print(f"� Found {total_classes} VTK classes across {len(module_classes)} modules")
+    print(f"📦 Found {total_classes} VTK classes across {len(module_classes)} modules")
     return module_classes
 
-def extract_all_class_docs(module_classes: dict[str, list[tuple[str, str]]]) -> list[dict[str, Any]]:
+def _extract_all_class_docs(module_classes: dict[str, list[tuple[str, str]]]) -> list[dict[str, Any]]:
     """Extract documentation for all VTK classes.
 
     Args:
@@ -122,7 +131,7 @@ def extract_all_class_docs(module_classes: dict[str, list[tuple[str, str]]]) -> 
         print(f"🔧 Extracting {vtk_module} ({len(classes)} classes)...")
 
         for module_name, class_name in classes:
-            class_docs = extract_class_docs(module_name, class_name)
+            class_docs = _extract_class_docs(module_name, class_name)
             if class_docs:
                 # Add VTK introspection data (role, datatypes, semantic_methods)
                 introspection = introspect_class(class_name)
@@ -141,7 +150,7 @@ def extract_all_class_docs(module_classes: dict[str, list[tuple[str, str]]]) -> 
     return all_records
 
 
-def extract_class_docs(module_name: str, class_name: str) -> dict[str, Any]:
+def _extract_class_docs(module_name: str, class_name: str) -> dict[str, Any]:
     """Extract structured documentation for a VTK class using help() output.
 
     Args:
@@ -165,7 +174,7 @@ def extract_class_docs(module_name: str, class_name: str) -> dict[str, Any]:
         finally:
             sys.stdout = old_stdout
 
-        parsed_docs = parse_help_structure(help_text, class_name)
+        parsed_docs = _parse_help_structure(help_text, class_name)
 
         class_doc = parsed_docs.get("class_doc", "")
         return {
@@ -180,7 +189,7 @@ def extract_class_docs(module_name: str, class_name: str) -> dict[str, Any]:
         print(f"Warning: Could not extract docs for {module_name}.{class_name}: {e}")
         return {}
 
-def parse_help_structure(help_text: str, class_name: str) -> dict[str, Any]:
+def _parse_help_structure(help_text: str, class_name: str) -> dict[str, Any]:
     """Parse the structured help() output to preserve organization.
 
     Args:
@@ -205,7 +214,7 @@ def parse_help_structure(help_text: str, class_name: str) -> dict[str, Any]:
         elif in_class_doc and line.startswith(" |  "):
             class_doc_lines.append(line[4:])
 
-    class_doc = clean_docstring("\n".join(class_doc_lines).strip())
+    class_doc = _clean_docstring("\n".join(class_doc_lines).strip())
 
     # Parse sections
     sections = {}
@@ -237,7 +246,7 @@ def parse_help_structure(help_text: str, class_name: str) -> dict[str, Any]:
             # Save previous section if it has content
             if current_section and current_content:
                 section_content = "\n".join(current_content)
-                methods = extract_methods_from_section(section_content)
+                methods = _extract_methods_from_section(section_content)
                 if methods:
                     sections[current_section] = {"methods": methods, "method_count": len(methods)}
 
@@ -254,13 +263,13 @@ def parse_help_structure(help_text: str, class_name: str) -> dict[str, Any]:
     # Save the last section (no header follows it to trigger save)
     if current_section and current_content:
         section_content = "\n".join(current_content)
-        methods = extract_methods_from_section(section_content)
+        methods = _extract_methods_from_section(section_content)
         if methods:
             sections[current_section] = {"methods": methods, "method_count": len(methods)}
 
     return {"class_doc": class_doc, "sections": sections}
 
-def extract_methods_from_section(section_content: str) -> dict[str, str]:
+def _extract_methods_from_section(section_content: str) -> dict[str, str]:
     """Extract individual method documentation from a section.
 
     Args:
@@ -298,7 +307,7 @@ def extract_methods_from_section(section_content: str) -> dict[str, str]:
             # Save previous method if exists
             if current_method and current_doc:
                 method_doc_text = "\n".join(current_doc)
-                cleaned_doc = clean_docstring(method_doc_text)
+                cleaned_doc = _clean_docstring(method_doc_text)
                 if cleaned_doc:
                     methods[current_method] = cleaned_doc
 
@@ -318,13 +327,13 @@ def extract_methods_from_section(section_content: str) -> dict[str, str]:
     # Save the last method (no next signature to trigger save)
     if current_method and current_doc:
         method_doc_text = "\n".join(current_doc)
-        cleaned_doc = clean_docstring(method_doc_text)
+        cleaned_doc = _clean_docstring(method_doc_text)
         if cleaned_doc:
             methods[current_method] = cleaned_doc
 
     return methods
 
-def clean_docstring(docstring: str) -> str:
+def _clean_docstring(docstring: str) -> str:
     """Clean and normalize a docstring, filtering out C++ specific information.
 
     Args:
@@ -353,7 +362,7 @@ def clean_docstring(docstring: str) -> str:
 
     return cleaned
 
-def classify_all(all_records: list[dict[str, Any]]) -> None:
+def _classify_all(all_records: list[dict[str, Any]]) -> None:
     """Classify all records using LLM (synopsis, action_phrase, visibility_score).
 
     Args:
@@ -386,7 +395,7 @@ def classify_all(all_records: list[dict[str, Any]]) -> None:
     print(f"   ✅ Classified {classified_count}/{len(all_records)} classes")
 
 
-def write_jsonl(records: list[dict[str, Any]], output_path: str | Path) -> None:
+def _write_jsonl(records: list[dict[str, Any]], output_path: str | Path) -> None:
     """Write records to JSONL file.
 
     Args:

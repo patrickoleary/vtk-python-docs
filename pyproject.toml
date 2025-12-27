@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vtk-python-docs"
-version = "0.2.0"
+version = "0.3.0"
 description = "VTK Python documentation extraction, stub enhancement, and API generation"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -65,3 +65,7 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+asyncio_mode = "auto"
+filterwarnings = [
+    "ignore:enable_cleanup_closed ignored:DeprecationWarning",
+]

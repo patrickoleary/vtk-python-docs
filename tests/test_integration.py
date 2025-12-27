@@ -6,15 +6,15 @@ from pathlib import Path
 import pytest
 
 from vtk_python_docs.config import Config
-from vtk_python_docs.extract.extractor import extract_class_docs
+from vtk_python_docs.extract.extractor import _extract_class_docs
 
 
 class TestExtractClassDocs:
-    """Integration tests for extract_class_docs."""
+    """Integration tests for _extract_class_docs."""
 
     def test_extracts_vtkobject(self):
         """Test extracting docs for vtkObject."""
-        result = extract_class_docs("vtkmodules.vtkCommonCore", "vtkObject")
+        result = _extract_class_docs("vtkmodules.vtkCommonCore", "vtkObject")
         assert result is not None
         assert result["class_name"] == "vtkObject"
         assert "class_doc" in result
@@ -22,7 +22,7 @@ class TestExtractClassDocs:
 
     def test_extracts_vtkactor(self):
         """Test extracting docs for vtkActor."""
-        result = extract_class_docs("vtkmodules.vtkRenderingCore", "vtkActor")
+        result = _extract_class_docs("vtkmodules.vtkRenderingCore", "vtkActor")
         assert result is not None
         assert result["class_name"] == "vtkActor"
         assert len(result.get("class_doc", "")) > 0
@@ -42,7 +42,7 @@ class TestFullExtraction:
         temp_config.docs_dir.mkdir(parents=True, exist_ok=True)
 
         # Extract just one class and write it
-        result = extract_class_docs("vtkmodules.vtkCommonCore", "vtkObject")
+        result = _extract_class_docs("vtkmodules.vtkCommonCore", "vtkObject")
         if result:
             with open(temp_config.jsonl_output, "w") as f:
                 record = {"class_name": "vtkObject", "module_name": "vtkCommonCore", **result}

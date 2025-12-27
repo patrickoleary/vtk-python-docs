@@ -1,4 +1,11 @@
-"""LLM-based classification and synopsis generation using LiteLLM."""
+"""LLM-based classification and synopsis generation using LiteLLM.
+
+Code map:
+    check_llm_configured()         Verify LLM is configured, exit if not
+    classify_class()               Classify a single VTK class (async)
+    classify_classes_batch()       Classify multiple classes with rate limiting (async)
+        _load_cache()              Load cached classifications from file
+"""
 
 import asyncio
 import json
@@ -107,7 +114,7 @@ def check_llm_configured() -> None:
 async def classify_class(class_name: str, class_doc: str) -> dict[str, Any] | None:
     """Classify a VTK class using LLM.
 
-    Returns a dict with synopsis, action_phrase, role, and visibility.
+    Returns a dict with synopsis, action_phrase, and visibility_score.
 
     Args:
         class_name: Name of the VTK class.

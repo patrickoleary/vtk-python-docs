@@ -1,6 +1,10 @@
 """Generate and enhance VTK Python stub files with documentation.
 
-Pipeline: generate_official_stubs -> load_docs -> enhance_stubs
+Code map:
+    generate_all()                 Main entry point, orchestrates full pipeline
+        _generate_official_stubs() Generate official VTK stubs to temp directory
+        _load_docs_by_module()     Load JSONL and group by module
+        _enhance_stubs()           Enhance stubs with documentation
 """
 
 import json
@@ -33,24 +37,24 @@ def generate_all(config: Config | None = None, timeout: int = 300) -> int:
     print("=" * 50)
 
     # Generate official stubs to temp directory
-    temp_dir = generate_official_stubs(timeout)
+    temp_dir = _generate_official_stubs(timeout)
     if not temp_dir:
         return 0
 
     try:
         # Load documentation from JSONL
-        docs_by_module = load_docs_by_module(jsonl_file)
+        docs_by_module = _load_docs_by_module(jsonl_file)
         if not docs_by_module:
             return 0
 
         # Enhance stubs with documentation
-        return enhance_stubs(temp_dir, docs_by_module, output_dir)
+        return _enhance_stubs(temp_dir, docs_by_module, output_dir)
     finally:
         # Clean up temp directory
         if temp_dir.exists():
             shutil.rmtree(temp_dir)
 
-def generate_official_stubs(timeout: int = 300) -> Path | None:
+def _generate_official_stubs(timeout: int = 300) -> Path | None:
     """Generate official VTK stub files to a temporary directory.
 
     Args:
@@ -87,7 +91,7 @@ def generate_official_stubs(timeout: int = 300) -> Path | None:
         shutil.rmtree(temp_dir)
         return None
 
-def load_docs_by_module(jsonl_file: Path) -> dict[str, dict[str, dict[str, Any]]]:
+def _load_docs_by_module(jsonl_file: Path) -> dict[str, dict[str, dict[str, Any]]]:
     """Load documentation from JSONL, grouped by module.
 
     Args:
@@ -117,7 +121,7 @@ def load_docs_by_module(jsonl_file: Path) -> dict[str, dict[str, dict[str, Any]]
     print(f"   Loaded docs for {len(docs_by_module)} modules")
     return docs_by_module
 
-def enhance_stubs(
+def _enhance_stubs(
     stubs_dir: Path, docs_by_module: dict[str, dict[str, dict[str, Any]]], output_dir: Path
 ) -> int:
     """Enhance all stub files with documentation.

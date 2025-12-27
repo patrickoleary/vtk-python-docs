@@ -1,163 +1,136 @@
-"""Unit tests for markdown generator module."""
+"""Unit tests for markdown generator module.
+
+Tests the public API generate_all() and verifies output structure.
+"""
 
 import json
 from pathlib import Path
 
-from vtk_python_docs.markdown.generator import (
-    create_class_markdown,
-    create_main_index,
-    format_method_doc,
-    get_vtk_version,
-    load_docs_by_module,
-    process_modules,
-)
+from vtk_python_docs.config import Config
+from vtk_python_docs.markdown.generator import generate_all
 
 
-class TestGetVTKVersion:
-    """Tests for get_vtk_version function."""
+class TestGenerateAll:
+    """Tests for generate_all() public API."""
 
-    def test_returns_string(self):
-        """Test that function returns a string."""
-        result = get_vtk_version()
-        assert isinstance(result, str)
+    def test_returns_zero_for_missing_jsonl(self, tmp_path: Path):
+        """Test returns 0 when JSONL file doesn't exist."""
+        config = Config(project_root=tmp_path)
+        result = generate_all(config)
+        assert result == 0
 
-    def test_version_format(self):
-        """Test that version has expected format."""
-        result = get_vtk_version()
-        # Should be something like "9.5.0" or "Unknown"
-        assert len(result) > 0
+    def test_generates_markdown_files(self, tmp_path: Path):
+        """Test that markdown files are generated."""
+        config = Config(project_root=tmp_path)
+        config.docs_dir.mkdir(parents=True, exist_ok=True)
 
+        # Create test JSONL
+        with open(config.jsonl_output, "w") as f:
+            f.write(json.dumps({
+                "class_name": "vtkTest",
+                "module_name": "vtkTestModule",
+                "class_doc": "Test class description.",
+                "synopsis": "Test synopsis.",
+                "structured_docs": {"sections": {}},
+            }) + "\n")
 
-class TestFormatMethodDoc:
-    """Tests for format_method_doc function."""
+        result = generate_all(config)
+        assert result == 1  # 1 module processed
 
-    def test_empty_doc(self):
-        """Test empty doc returns placeholder."""
-        assert format_method_doc("") == "*No documentation available.*"
+        # Verify files created
+        assert (config.markdown_dir / "vtkTestModule" / "vtkTest.md").exists()
+        assert (config.markdown_dir / "vtkTestModule" / "index.md").exists()
+        assert (config.markdown_dir / "index.md").exists()
 
-    def test_simple_doc(self):
-        """Test simple doc is returned."""
-        doc = "This is a method description."
-        result = format_method_doc(doc)
-        assert "This is a method description" in result
+    def test_markdown_content(self, tmp_path: Path):
+        """Test that markdown content is correct."""
+        config = Config(project_root=tmp_path)
+        config.docs_dir.mkdir(parents=True, exist_ok=True)
 
-    def test_multiline_doc(self):
-        """Test multiline doc is formatted."""
-        doc = "Line 1\nLine 2\nLine 3"
-        result = format_method_doc(doc)
-        assert "Line 1" in result
+        # Create test JSONL
+        with open(config.jsonl_output, "w") as f:
+            f.write(json.dumps({
+                "class_name": "vtkActor",
+                "module_name": "vtkRenderingCore",
+                "class_doc": "Represents an entity in a rendering scene.",
+                "synopsis": "Represents an entity in a rendering scene.",
+                "structured_docs": {"sections": {}},
+            }) + "\n")
 
+        generate_all(config)
 
-class TestCreateClassMarkdown:
-    """Tests for create_class_markdown function."""
+        # Check class markdown
+        class_md = (config.markdown_dir / "vtkRenderingCore" / "vtkActor.md").read_text()
+        assert "# vtkActor" in class_md
+        assert "vtkRenderingCore" in class_md
+        assert "Represents an entity" in class_md
 
-    def test_creates_markdown(self):
-        """Test that markdown is created."""
-        class_data = {
-            "class_doc": "Test class description.",
-            "synopsis": "Test synopsis.",
-            "structured_docs": {"sections": {}},
-        }
-        result = create_class_markdown("vtkTest", class_data, "vtkTestModule")
-        assert "# vtkTest" in result
-        assert "Test class description" in result
+        # Check module index
+        index_md = (config.markdown_dir / "vtkRenderingCore" / "index.md").read_text()
+        assert "vtkActor" in index_md
 
-    def test_includes_module(self):
-        """Test that module is included."""
-        class_data = {
-            "class_doc": "Description.",
-            "structured_docs": {"sections": {}},
-        }
-        result = create_class_markdown("vtkTest", class_data, "vtkTestModule")
-        assert "vtkTestModule" in result
+        # Check main index
+        main_md = (config.markdown_dir / "index.md").read_text()
+        assert "vtkRenderingCore" in main_md
 
-    def test_includes_synopsis(self):
-        """Test that synopsis is included."""
-        class_data = {
-            "class_doc": "Description.",
-            "synopsis": "This is the synopsis.",
-            "structured_docs": {"sections": {}},
-        }
-        result = create_class_markdown("vtkTest", class_data, "vtkTestModule")
-        assert "This is the synopsis" in result
+    def test_metadata_table(self, tmp_path: Path):
+        """Test that metadata table is generated correctly."""
+        config = Config(project_root=tmp_path)
+        config.docs_dir.mkdir(parents=True, exist_ok=True)
 
+        # Create test JSONL with full metadata
+        with open(config.jsonl_output, "w") as f:
+            f.write(json.dumps({
+                "class_name": "vtkSphereSource",
+                "module_name": "vtkFiltersSources",
+                "class_doc": "Creates a sphere.",
+                "synopsis": "Generates sphere geometry.",
+                "role": "input",
+                "action_phrase": "sphere generation",
+                "visibility_score": 0.9,
+                "input_datatype": "",
+                "output_datatype": "vtkPolyData",
+                "semantic_methods": ["SetRadius", "SetCenter", "SetThetaResolution"],
+                "structured_docs": {"sections": {}},
+            }) + "\n")
 
-class TestProcessModules:
-    """Tests for process_modules function."""
+        generate_all(config)
 
-    def test_empty_module(self, tmp_path: Path):
-        """Test processing empty module."""
-        docs_by_module = {"vtkEmpty": {}}
-        results = process_modules(docs_by_module, tmp_path)
-        assert results[0]["status"] == "empty"
-        assert results[0]["class_count"] == 0
+        class_md = (config.markdown_dir / "vtkFiltersSources" / "vtkSphereSource.md").read_text()
 
-    def test_processes_classes(self, tmp_path: Path):
-        """Test processing module with classes."""
-        docs_by_module = {
-            "vtkTestModule": {
-                "vtkTest": {
-                    "class_doc": "Test description.",
-                    "structured_docs": {"sections": {}},
-                }
-            }
-        }
-        results = process_modules(docs_by_module, tmp_path)
-        assert results[0]["status"] == "success"
-        assert results[0]["class_count"] == 1
+        # Check metadata table
+        assert "| **Role** | input |" in class_md
+        assert "| **Action** | sphere generation |" in class_md
+        assert "| **Visibility** |" in class_md
+        assert "| **Output Type** | vtkPolyData |" in class_md
 
-    def test_creates_files(self, tmp_path: Path):
-        """Test that files are created."""
-        docs_by_module = {
-            "vtkTestModule": {
-                "vtkTest": {
-                    "class_doc": "Test description.",
-                    "structured_docs": {"sections": {}},
-                }
-            }
-        }
-        process_modules(docs_by_module, tmp_path)
+        # Check key methods
+        assert "## Key Methods" in class_md
+        assert "`SetRadius`" in class_md
+        assert "`SetCenter`" in class_md
 
-        assert (tmp_path / "vtkTestModule" / "vtkTest.md").exists()
-        assert (tmp_path / "vtkTestModule" / "index.md").exists()
+    def test_multiple_modules(self, tmp_path: Path):
+        """Test processing multiple modules."""
+        config = Config(project_root=tmp_path)
+        config.docs_dir.mkdir(parents=True, exist_ok=True)
 
+        # Create test JSONL with multiple modules
+        with open(config.jsonl_output, "w") as f:
+            f.write(json.dumps({
+                "class_name": "vtkObject",
+                "module_name": "vtkCommonCore",
+                "class_doc": "Base class.",
+                "structured_docs": {"sections": {}},
+            }) + "\n")
+            f.write(json.dumps({
+                "class_name": "vtkActor",
+                "module_name": "vtkRenderingCore",
+                "class_doc": "Actor class.",
+                "structured_docs": {"sections": {}},
+            }) + "\n")
 
-class TestCreateMainIndex:
-    """Tests for create_main_index function."""
+        result = generate_all(config)
+        assert result == 2  # 2 modules processed
 
-    def test_creates_index(self, tmp_path: Path):
-        """Test that index is created."""
-        results = [
-            {"module": "vtkCore", "status": "success", "class_count": 10},
-            {"module": "vtkRendering", "status": "success", "class_count": 20},
-        ]
-        create_main_index(tmp_path, results)
-        assert (tmp_path / "index.md").exists()
-
-    def test_index_content(self, tmp_path: Path):
-        """Test index content."""
-        results = [
-            {"module": "vtkCore", "status": "success", "class_count": 10},
-        ]
-        create_main_index(tmp_path, results)
-        content = (tmp_path / "index.md").read_text()
-        assert "vtkCore" in content
-
-
-class TestLoadDocsByModule:
-    """Tests for load_docs_by_module function."""
-
-    def test_nonexistent_file(self, tmp_path: Path):
-        """Test with nonexistent file returns empty dict."""
-        result = load_docs_by_module(tmp_path / "nonexistent.jsonl")
-        assert result == {}
-
-    def test_loads_docs(self, tmp_path: Path):
-        """Test loading docs from JSONL."""
-        jsonl_file = tmp_path / "test.jsonl"
-        with open(jsonl_file, "w") as f:
-            f.write(json.dumps({"class_name": "vtkTest", "module_name": "vtkCore"}) + "\n")
-
-        result = load_docs_by_module(jsonl_file)
-        assert "vtkCore" in result
-        assert "vtkTest" in result["vtkCore"]
+        assert (config.markdown_dir / "vtkCommonCore" / "vtkObject.md").exists()
+        assert (config.markdown_dir / "vtkRenderingCore" / "vtkActor.md").exists()

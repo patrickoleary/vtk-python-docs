@@ -5,6 +5,13 @@ Computes these fields at extraction time to include in JSONL records:
 - input_datatype: Input data type for vtkAlgorithm subclasses
 - output_datatype: Output data type for vtkAlgorithm subclasses
 - semantic_methods: Non-boilerplate callable methods
+
+Code map:
+    introspect_class()             Main entry point, returns all introspection data
+        _classify_vtk_class()      Classify VTK class into pipeline role
+        _get_algorithm_datatypes() Get input/output datatypes for algorithms
+        _get_semantic_methods()    Get non-boilerplate methods
+            _is_boilerplate_method()   Check if method is boilerplate
 """
 
 from __future__ import annotations
@@ -25,10 +32,18 @@ BOILERPLATE_METHODS = {
     "GetNumberOfGenerationsFromBase", "GetNumberOfGenerationsFromBaseType",
     "GetAddressAsString", "GetIsInMemkind", "GetUsingMemkind",
     "InitializeObjectBase", "SetMemkindDirectory", "UsesGarbageCollector",
+    "GetObjectName", "SetObjectName", "GetObjectDescription",
+    # Python binding infrastructure
+    "override",
+    # Debug/warning infrastructure
+    "DebugOn", "DebugOff", "GetDebug", "SetDebug",
+    "GlobalWarningDisplayOn", "GlobalWarningDisplayOff",
+    "GetGlobalWarningDisplay", "SetGlobalWarningDisplay",
+    "BreakOnError",
 }
 
 
-def classify_vtk_class(class_name: str) -> str:
+def _classify_vtk_class(class_name: str) -> str:
     """Classify a VTK class into pipeline role using VTK introspection.
 
     Returns one of: input, filter, properties, renderer, scene, infrastructure, output, utility, color
@@ -44,6 +59,17 @@ def classify_vtk_class(class_name: str) -> str:
     try:
         instance = vtk_class()
     except Exception:
+        # Non-instantiable algorithm base classes are filters (like vtkAlgorithm itself)
+        if class_name in (
+            "vtkHyperTreeGridAlgorithm",
+            "vtkImageAlgorithm",
+            "vtkPartitionedDataSetAlgorithm",
+            "vtkPartitionedDataSetCollectionAlgorithm",
+            "vtkReaderAlgorithm",
+            "vtkStatisticsAlgorithm",
+            "vtkThreadedImageAlgorithm",
+        ):
+            return "filter"
         return "utility"
 
     # Check if instance has IsA method (some VTK classes don't inherit from vtkObjectBase)
@@ -52,9 +78,12 @@ def classify_vtk_class(class_name: str) -> str:
 
     # ---- 1. vtkAlgorithm ----
     if instance.IsA("vtkAlgorithm"):
-        if instance.IsA("vtkMapper") or instance.IsA("vtkAbstractVolumeMapper"):
+        # Special cases: algorithm base classes that need explicit classification
+        if class_name in ("vtkResliceCursorPolyDataAlgorithm", "vtkMultiTimeStepAlgorithm"):
+            return "filter"
+        if instance.IsA("vtkAbstractMapper") or instance.IsA("vtkTexture"):
             return "properties"
-        elif instance.IsA("vtkWriter") or instance.IsA("vtkExporter"):
+        elif instance.IsA("vtkWriter") or instance.IsA("vtkExporter") or instance.IsA("vtkImageWriter"):
             return "output"
         elif instance.IsA("vtkReader"):
             return "input"
@@ -72,6 +101,10 @@ def classify_vtk_class(class_name: str) -> str:
 
     # ---- classify non-algorithms in safe order ----
 
+    # Importers (scene file loaders)
+    if instance.IsA("vtkImporter"):
+        return "input"
+
     # Renderer first
     if instance.IsA("vtkRenderer"):
         return "renderer"
@@ -87,17 +120,35 @@ def classify_vtk_class(class_name: str) -> str:
         return "infrastructure"
 
     # Charts
-    if instance.IsA("vtkContextActor") or instance.IsA("vtkContextView"):
+    if instance.IsA("vtkContextActor") or instance.IsA("vtkContextView") or instance.IsA("vtkContextMapper2D") or instance.IsA("vtkContextItem"):
+        return "infrastructure"
+
+    # View classes
+    if instance.IsA("vtkView"):
         return "infrastructure"
 
     # Render backend helpers
     if instance.IsA("vtkRenderPass"):
         return "renderer"
 
-    if class_name.startswith("vtkOpenGL"):
-        return "renderer"
+    # Exporters (non-algorithm, like vtkOpenGLGL2PSExporter)
+    if instance.IsA("vtkExporter"):
+        return "output"
 
-    # Properties objects (styling)
+    # Scene objects (camera/light/widget) - before vtkProp check
+    if instance.IsA("vtkCamera") or instance.IsA("vtkCameraActor"):
+        return "scene"
+
+    if instance.IsA("vtkLight") or instance.IsA("vtkLightKit") or instance.IsA("vtkLightActor"):
+        return "scene"
+
+    if instance.IsA("vtkAbstractWidget") or instance.IsA("vtk3DWidget"):
+        return "scene"
+
+    # Properties objects (styling) - before vtkOpenGL check
+    if instance.IsA("vtkProp"):
+        return "properties"
+
     if instance.IsA("vtkProperty") or instance.IsA("vtkVolumeProperty"):
         return "properties"
 
@@ -107,19 +158,8 @@ def classify_vtk_class(class_name: str) -> str:
     if "LookupTable" in class_name or "ColorTransfer" in class_name:
         return "properties"
 
-    # Scene objects (camera/light/widget)
-    if instance.IsA("vtkCamera") or instance.IsA("vtkCameraActor"):
-        return "scene"
-
-    if instance.IsA("vtkLight") or instance.IsA("vtkLightKit") or instance.IsA("vtkLightActor"):
-        return "scene"
-
-    if instance.IsA("vtkAbstractWidget"):
-        return "scene"
-
-    # All props as "properties"
-    if instance.IsA("vtkProp"):
-        return "properties"
+    if class_name.startswith("vtkOpenGL"):
+        return "renderer"
 
     # Data / utility
     if instance.IsA("vtkDataObject"):
@@ -132,7 +172,7 @@ def classify_vtk_class(class_name: str) -> str:
     return "utility"
 
 
-def get_algorithm_datatypes(class_name: str) -> tuple[str, str]:
+def _get_algorithm_datatypes(class_name: str) -> tuple[str, str]:
     """Get input and output datatypes for a vtkAlgorithm subclass.
 
     Returns:
@@ -182,7 +222,7 @@ def get_algorithm_datatypes(class_name: str) -> tuple[str, str]:
     return input_datatype, output_datatype
 
 
-def is_boilerplate_method(name: str) -> bool:
+def _is_boilerplate_method(name: str) -> bool:
     """Check if a method name is VTK boilerplate."""
     # All Python dunder methods
     if name.startswith("__") and name.endswith("__"):
@@ -196,7 +236,7 @@ def is_boilerplate_method(name: str) -> bool:
     return name in BOILERPLATE_METHODS
 
 
-def get_semantic_methods(class_name: str) -> list[str]:
+def _get_semantic_methods(class_name: str) -> list[str]:
     """Get non-boilerplate callable methods for a VTK class.
 
     Returns:
@@ -208,7 +248,7 @@ def get_semantic_methods(class_name: str) -> list[str]:
 
     return sorted(
         name for name in dir(vtk_class)
-        if not is_boilerplate_method(name) and callable(getattr(vtk_class, name, None))
+        if not _is_boilerplate_method(name) and callable(getattr(vtk_class, name, None))
     )
 
 
@@ -221,9 +261,9 @@ def introspect_class(class_name: str) -> dict[str, str | list[str]]:
         - output_datatype: Output data type (for algorithms)
         - semantic_methods: List of non-boilerplate methods
     """
-    role = classify_vtk_class(class_name)
-    input_datatype, output_datatype = get_algorithm_datatypes(class_name)
-    semantic_methods = get_semantic_methods(class_name)
+    role = _classify_vtk_class(class_name)
+    input_datatype, output_datatype = _get_algorithm_datatypes(class_name)
+    semantic_methods = _get_semantic_methods(class_name)
 
     return {
         "role": role,

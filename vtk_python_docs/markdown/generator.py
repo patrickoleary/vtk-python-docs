@@ -1,6 +1,15 @@
 """Generate markdown documentation from VTK docs database.
 
-Pipeline: load_docs_by_module -> process_modules -> create_main_index
+Code map:
+    generate_all()                 Main entry point, orchestrates full pipeline
+        _load_docs_by_module()     Load JSONL and group by module
+        _process_modules()         Write markdown files for all modules
+            _create_class_markdown()   Generate markdown for a single class
+                _create_metadata_table()   Create metadata table (role, action, visibility, datatypes)
+                _format_method_doc()       Format method documentation
+            _create_module_index()     Generate module index page
+        _create_main_index()       Generate main documentation index
+            _get_vtk_version()     Get VTK version string
 """
 
 import json
@@ -28,15 +37,15 @@ def generate_all(config: Config | None = None) -> int:
     print("=" * 50)
 
     # Load documentation from JSONL
-    docs_by_module = load_docs_by_module(jsonl_file)
+    docs_by_module = _load_docs_by_module(jsonl_file)
     if not docs_by_module:
         return 0
 
     # rocess each module
-    results = process_modules(docs_by_module, output_dir)
+    results = _process_modules(docs_by_module, output_dir)
 
     # Create main index
-    create_main_index(output_dir, results)
+    _create_main_index(output_dir, results)
 
     # Summary
     successful = sum(1 for r in results if r["status"] == "success")
@@ -47,7 +56,7 @@ def generate_all(config: Config | None = None) -> int:
 
     return successful
 
-def load_docs_by_module(jsonl_file: Path) -> dict[str, dict[str, dict[str, Any]]]:
+def _load_docs_by_module(jsonl_file: Path) -> dict[str, dict[str, dict[str, Any]]]:
     """Load documentation from JSONL, grouped by module.
 
     Args:
@@ -77,7 +86,7 @@ def load_docs_by_module(jsonl_file: Path) -> dict[str, dict[str, dict[str, Any]]
     print(f"📦 Found {len(docs_by_module)} VTK modules")
     return docs_by_module
 
-def process_modules(
+def _process_modules(
     docs_by_module: dict[str, dict[str, dict[str, Any]]], output_dir: Path
 ) -> list[dict[str, Any]]:
     """Process all modules and write markdown files.
@@ -108,11 +117,11 @@ def process_modules(
 
             # Write class markdown files
             for class_name, class_data in module_docs.items():
-                markdown = create_class_markdown(class_name, class_data, module_name)
+                markdown = _create_class_markdown(class_name, class_data, module_name)
                 (module_dir / f"{class_name}.md").write_text(markdown, encoding="utf-8")
 
             # Write module index
-            index_content = create_module_index(module_name, module_docs)
+            index_content = _create_module_index(module_name, module_docs)
             (module_dir / "index.md").write_text(index_content, encoding="utf-8")
 
             results.append({"module": module_name, "status": "success", "class_count": len(module_docs)})
@@ -124,7 +133,7 @@ def process_modules(
 
     return results
 
-def create_class_markdown(class_name: str, class_data: dict[str, Any], module_name: str) -> str:
+def _create_class_markdown(class_name: str, class_data: dict[str, Any], module_name: str) -> str:
     """Create markdown content for a single class.
 
     Args:
@@ -142,6 +151,9 @@ def create_class_markdown(class_name: str, class_data: dict[str, Any], module_na
         "",
     ]
 
+    # Metadata table
+    lines.extend(_create_metadata_table(class_data))
+
     # Synopsis
     if synopsis := class_data.get("synopsis"):
         lines.extend(["## Synopsis", "", synopsis, ""])
@@ -150,26 +162,37 @@ def create_class_markdown(class_name: str, class_data: dict[str, Any], module_na
     if class_doc := class_data.get("class_doc"):
         lines.extend(["## Description", "", class_doc, ""])
 
-    # Methods
+    # Key Methods (semantic, non-boilerplate)
+    if semantic_methods := class_data.get("semantic_methods"):
+        lines.extend(["## Key Methods", ""])
+        lines.append(", ".join(f"`{m}`" for m in semantic_methods[:20]))
+        if len(semantic_methods) > 20:
+            lines.append(f"\n*...and {len(semantic_methods) - 20} more*")
+        lines.append("")
+
+    # Methods (only show key/semantic methods)
     structured_docs = class_data.get("structured_docs", {})
     sections = structured_docs.get("sections", {})
+    semantic_methods_set = set(class_data.get("semantic_methods", []))
 
-    if sections:
+    if sections and semantic_methods_set:
         lines.extend(["## Methods", ""])
 
         for section_name, section_data in sections.items():
             methods = section_data.get("methods", {})
-            if methods:
+            # Filter to only key methods
+            key_methods = {k: v for k, v in methods.items() if k in semantic_methods_set}
+            if key_methods:
                 clean_section = section_name.replace("|", "").strip()
                 lines.extend([f"### {clean_section}", ""])
 
-                for method_name, method_doc in sorted(methods.items()):
-                    lines.extend([f"#### `{method_name}`", "", format_method_doc(method_doc), ""])
+                for method_name, method_doc in sorted(key_methods.items()):
+                    lines.extend([f"#### `{method_name}`", "", _format_method_doc(method_doc), ""])
 
     return "\n".join(lines)
 
 
-def create_module_index(module_name: str, module_docs: dict[str, dict[str, Any]]) -> str:
+def _create_module_index(module_name: str, module_docs: dict[str, dict[str, Any]]) -> str:
     """Create index markdown for a module.
 
     Args:
@@ -197,7 +220,7 @@ def create_module_index(module_name: str, module_docs: dict[str, dict[str, Any]]
 
     return "\n".join(lines)
 
-def create_main_index(output_dir: Path, results: list[dict[str, Any]]) -> None:
+def _create_main_index(output_dir: Path, results: list[dict[str, Any]]) -> None:
     """Create main documentation index.
 
     Args:
@@ -210,7 +233,7 @@ def create_main_index(output_dir: Path, results: list[dict[str, Any]]) -> None:
     lines = [
         "# VTK Python API Documentation",
         "",
-        f"**{get_vtk_version()}**",
+        f"**{_get_vtk_version()}**",
         "",
         f"This documentation covers {len(successful)} modules with {total_classes:,} classes.",
         "",
@@ -225,7 +248,46 @@ def create_main_index(output_dir: Path, results: list[dict[str, Any]]) -> None:
 
     (output_dir / "index.md").write_text("\n".join(lines), encoding="utf-8")
 
-def format_method_doc(method_doc: str) -> str:
+def _create_metadata_table(class_data: dict[str, Any]) -> list[str]:
+    """Create metadata table for class page.
+
+    Args:
+        class_data: Documentation data for the class.
+
+    Returns:
+        List of markdown lines.
+    """
+    role = class_data.get("role", "")
+    action_phrase = class_data.get("action_phrase", "")
+    visibility_score = class_data.get("visibility_score", 0.0)
+    input_datatype = class_data.get("input_datatype", "")
+    output_datatype = class_data.get("output_datatype", "")
+
+    # Convert visibility score to stars (0-5)
+    stars = int(round(visibility_score * 5))
+    visibility_display = "⭐" * stars + f" ({visibility_score:.1f})"
+
+    lines = ["| | |", "|---|---|"]
+
+    if role:
+        lines.append(f"| **Role** | {role} |")
+    if action_phrase:
+        lines.append(f"| **Action** | {action_phrase} |")
+    if visibility_score > 0:
+        lines.append(f"| **Visibility** | {visibility_display} |")
+    if input_datatype:
+        lines.append(f"| **Input Type** | {input_datatype} |")
+    if output_datatype:
+        lines.append(f"| **Output Type** | {output_datatype} |")
+
+    # Only return table if we have content beyond headers
+    if len(lines) > 2:
+        lines.append("")
+        return lines
+    return []
+
+
+def _format_method_doc(method_doc: str) -> str:
     """Format method documentation for markdown, filtering C++ artifacts.
 
     Args:
@@ -240,12 +302,15 @@ def format_method_doc(method_doc: str) -> str:
     lines = [
         line.strip()
         for line in method_doc.strip().split("\n")
-        if line.strip() and not line.strip().startswith("C++:") and "::" not in line
+        if line.strip()
+        and not line.strip().startswith("C++:")
+        and "::" not in line
+        and not line.strip().startswith("---")  # Filter VTK help() separators
     ]
 
     return "\n".join(lines) if lines else "*No documentation available.*"
 
-def get_vtk_version() -> str:
+def _get_vtk_version() -> str:
     """Get VTK version string."""
     try:
         import vtk
